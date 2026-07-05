@@ -328,12 +328,12 @@ test("wrapped mode renders cover entity-picker (with includeDomains cover)", asy
   expect(coverPicker).not.toBeUndefined();
 });
 
-test("wrapped mode renders ha-switch toggles (ignore-reported-position, force-time-based, reports-command-not-endpoint, assumed-state)", async () => {
+test("wrapped mode renders ha-switch toggles (ignore-reported-position, force-time-based, tilt-follows-travel, reports-command-not-endpoint, assumed-state)", async () => {
   card = await mountCard(makeHass(), { selectedEntity: "cover.x", config: wrappedCfg(), activeTab: "device" });
   const toggles = card.shadowRoot.querySelectorAll("ha-switch.toggle-switch");
-  // Exactly 4 toggles: ignore_reported_position, force_time_based_position,
-  // reports_command_not_endpoint, assumed_state
-  expect(toggles.length).toBe(4);
+  // Exactly 5 toggles: ignore_reported_position, force_time_based_position,
+  // tilt_follows_travel, reports_command_not_endpoint, assumed_state
+  expect(toggles.length).toBe(5);
 });
 
 test("wrapped mode: toggling reports-command-not-endpoint calls _updateLocal", async () => {
@@ -341,8 +341,9 @@ test("wrapped mode: toggling reports-command-not-endpoint calls _updateLocal", a
   const captured = [];
   card._updateLocal = (u) => captured.push(u);
   // Order in renderInputEntities: [0] ignore_reported_position,
-  // [1] force_time_based_position, [2] reports_command_not_endpoint, [3] assumed_state
-  const toggle = card.shadowRoot.querySelectorAll("ha-switch.toggle-switch")[2];
+  // [1] force_time_based_position, [2] tilt_follows_travel,
+  // [3] reports_command_not_endpoint, [4] assumed_state
+  const toggle = card.shadowRoot.querySelectorAll("ha-switch.toggle-switch")[3];
   toggle.checked = true;
   toggle.dispatchEvent(new Event("change"));
   expect(captured).toContainEqual({ reports_command_not_endpoint: true });

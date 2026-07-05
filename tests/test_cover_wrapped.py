@@ -859,3 +859,45 @@ class TestWrappedNativeTiltForwarding:
             await cover._maybe_snap_to_reported_tilt()
 
         assert cover.tilt_calc.is_traveling()
+
+    @pytest.mark.asyncio
+    async def test_tilt_follows_travel_off_skips_coupling(self, make_cover):
+        cover = self._make_native_cover(make_cover, tilt_follows_travel=False)
+        cover._tilt_restore_target = 40
+
+        result = await cover._plan_tilt_for_travel(50, "close_cover", 80, 90)
+
+        assert result == (None, 0.0, False)
+        assert cover._tilt_restore_target is None
+
+    @pytest.mark.asyncio
+    async def test_tilt_follows_travel_on_keeps_coupling(self, make_cover):
+        cover = self._make_native_cover(make_cover)
+
+        with patch(
+            "custom_components.cover_time_based.cover_base"
+            ".CoverTimeBased._plan_tilt_for_travel",
+            new=AsyncMock(return_value=(0, 0.0, False)),
+        ) as base_plan:
+            await cover._plan_tilt_for_travel(50, "close_cover", 80, 90)
+
+        base_plan.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_tilt_follows_travel_off_ignored_without_native_tilt(
+        self, make_cover
+    ):
+        """The opt-out only applies under native tilt; time-based covers
+        execute the coupling physically and must keep planning it."""
+        cover = self._make_native_cover(
+            make_cover, tilt_follows_travel=False, tilt_mode="sequential"
+        )
+
+        with patch(
+            "custom_components.cover_time_based.cover_base"
+            ".CoverTimeBased._plan_tilt_for_travel",
+            new=AsyncMock(return_value=(0, 0.0, False)),
+        ) as base_plan:
+            await cover._plan_tilt_for_travel(50, "close_cover", 80, 90)
+
+        base_plan.assert_awaited_once()

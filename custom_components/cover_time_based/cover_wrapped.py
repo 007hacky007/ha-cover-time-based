@@ -47,6 +47,7 @@ class WrappedCoverTimeBased(CoverTimeBased):
         ignore_reported_position=False,
         force_time_based_position=False,
         reports_command_not_endpoint=False,
+        tilt_follows_travel=True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -54,6 +55,7 @@ class WrappedCoverTimeBased(CoverTimeBased):
         self._ignore_reported_position = ignore_reported_position
         self._force_time_based_position = force_time_based_position
         self._reports_command_not_endpoint = reports_command_not_endpoint
+        self._tilt_follows_travel = tilt_follows_travel
         self._last_self_command_time: float | None = None
         self._native_tilt_until: float | None = None
 
@@ -483,6 +485,23 @@ class WrappedCoverTimeBased(CoverTimeBased):
             await self._forward_native_tilt(target)
             return
         await super()._async_move_tilt_to_endpoint(target)
+
+    async def _plan_tilt_for_travel(self, target, command, current_pos, current_tilt):
+        """Skip the travel tilt coupling when the user opted out.
+
+        With tilt_follows_travel off, the tilt display holds its value
+        during travel instead of sweeping to the direction endpoint, and
+        no post-travel restore is scheduled. Only honored under native
+        tilt, where the coupling is tracker-side bookkeeping and the
+        wrapped cover reports the authoritative slat angle on settle;
+        time-based covers execute the coupling physically and keep it.
+        """
+        if not self._tilt_follows_travel and self._use_native_tilt():
+            self._tilt_restore_target = None
+            return None, 0.0, False
+        return await super()._plan_tilt_for_travel(
+            target, command, current_pos, current_tilt
+        )
 
     async def _start_tilt_restore(self):
         """Restore post-travel tilt through native forwarding when available.

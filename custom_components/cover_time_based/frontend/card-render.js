@@ -240,6 +240,13 @@ export function renderInputEntities(card, c) {
         )}
         ${renderToggleWithHelp(
           card,
+          "entities.tilt_follows_travel",
+          "entities.tilt_follows_travel_helper",
+          c.tilt_follows_travel !== false,
+          (e) => card._updateLocal({ tilt_follows_travel: e.target.checked }),
+        )}
+        ${renderToggleWithHelp(
+          card,
           "entities.reports_command_not_endpoint",
           "entities.reports_command_not_endpoint_helper",
           !!c.reports_command_not_endpoint,

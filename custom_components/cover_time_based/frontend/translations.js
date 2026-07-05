@@ -18,6 +18,9 @@ export const EN = {
   "entities.ignore_reported_position": "Ignore reported position",
   "entities.ignore_reported_position_helper":
     "Track position by time only and ignore the position the wrapped cover reports. Enable this if the underlying cover reports an unreliable position.",
+  "entities.tilt_follows_travel": "Tilt follows travel",
+  "entities.tilt_follows_travel_helper":
+    "Show the tilt sweeping to its endpoint while the cover travels (venetian slats close on the way down and open on the way up). Disable if the cover's slats do not follow travel direction. Only applies when tilt is forwarded natively to the wrapped cover.",
   "entities.force_time_based_position": "Force time-based positioning",
   "entities.force_time_based_position_helper":
     "By default, if the wrapped cover supports setting a position, the set-position command is sent straight to it. Enable this to instead drive it with timed open/close/stop, ignoring its native set-position support.",
