@@ -3,7 +3,11 @@
 import logging
 import time
 
-from homeassistant.components.cover import ATTR_CURRENT_POSITION, CoverEntityFeature
+from homeassistant.components.cover import (
+    ATTR_CURRENT_POSITION,
+    ATTR_CURRENT_TILT_POSITION,
+    CoverEntityFeature,
+)
 from homeassistant.const import (
     ATTR_SUPPORTED_FEATURES,
     STATE_CLOSED,
@@ -200,6 +204,11 @@ class WrappedCoverTimeBased(CoverTimeBased):
                     " no position info"
                 )
                 await self.async_stop_cover()
+            # After the settle, the wrapped cover's reported tilt (when it
+            # exposes one) overrides our time-based tilt estimate — including
+            # whatever snap_trackers_to_physical just derived inside
+            # _snap_to_position. Runs last so the reported value wins.
+            await self._maybe_snap_to_reported_tilt()
 
     async def _handle_command_state(self, new_val: str) -> None:
         """Reinterpret the wrapped entity's state as a command echo.
@@ -255,6 +264,11 @@ class WrappedCoverTimeBased(CoverTimeBased):
         target = self._wrapped_reported_position()
         if target is not None:
             await self._snap_to_position(target)
+        # A tilt-only report (position unchanged) must also be honored — a
+        # wrapped cover that articulates slats without traveling updates
+        # only current_tilt_position. Runs after the position snap so the
+        # reported tilt wins over strategy-derived coupling.
+        await self._maybe_snap_to_reported_tilt()
 
     async def _snap_to_position(self, target: int) -> None:
         """Snap our tracker to a known position.
@@ -266,6 +280,46 @@ class WrappedCoverTimeBased(CoverTimeBased):
         self._log("_snap_to_position :: snapping to %d", target)
         await self.set_known_position(position=target)
         self._last_command = None
+
+    async def _maybe_snap_to_reported_tilt(self) -> None:
+        """Snap our tilt tracker to the wrapped cover's reported tilt.
+
+        Counterpart of _snap_to_position for the tilt axis: once the wrapped
+        cover has settled, its reported current_tilt_position (when exposed
+        and valid) is the source of truth over our time-based estimate. A
+        no-op when this cover has no tilt configured or the wrapped entity
+        reports no usable tilt.
+        """
+        if not self._has_tilt_support():
+            return
+        target = self._wrapped_reported_tilt_position()
+        if target is None:
+            return
+        if (
+            not self.tilt_calc.is_traveling()
+            and self.tilt_calc.current_position() == target
+        ):
+            return
+        self._log("_maybe_snap_to_reported_tilt :: snapping tilt to %d", target)
+        await self.set_known_tilt_position(tilt_position=target)
+
+    def _wrapped_reported_tilt_position(self) -> int | None:
+        """Return the wrapped cover's reported tilt position, or None.
+
+        Unlike _wrapped_reported_position there is no closed-state fallback:
+        a closed cover implies nothing unambiguous about its slat angle.
+        Honors ignore_reported_position — a device whose reported values are
+        untrustworthy is untrustworthy on both axes.
+        """
+        if self._ignore_reported_position:
+            return None
+        state = self.hass.states.get(self._cover_entity_id)
+        if state is None:
+            return None
+        attr_tilt = state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+        if isinstance(attr_tilt, (int, float)) and 0 <= attr_tilt <= 100:
+            return int(attr_tilt)
+        return None
 
     def _wrapped_reported_position(self) -> int | None:
         """Return the wrapped cover's reported position, or None if unknown.
