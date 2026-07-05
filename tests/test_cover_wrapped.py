@@ -811,14 +811,33 @@ class TestWrappedNativeTiltForwarding:
         assert not cover._in_native_tilt_window()
 
     @pytest.mark.asyncio
-    async def test_plan_tilt_for_travel_skips_simulated_coupling(self, make_cover):
+    async def test_tilt_restore_forwarded_natively(self, make_cover):
+        """Post-travel tilt restore uses the wrapped cover's native tilt
+        instead of re-driving the main motor on a timer."""
         cover = self._make_native_cover(make_cover)
+        cover.travel_calc.set_position(50)
+        cover.tilt_calc.set_position(0)
         cover._tilt_restore_target = 40
 
-        result = await cover._plan_tilt_for_travel(50, "close_cover", 80, 90)
+        with patch.object(cover, "async_write_ha_state"):
+            await cover._start_tilt_restore()
 
-        assert result == (None, 0.0, False)
         assert cover._tilt_restore_target is None
+        assert self._tilt_svc(40) in _calls(cover.hass.services.async_call)
+        assert cover.tilt_calc.current_position() == 40
+
+    @pytest.mark.asyncio
+    async def test_tilt_restore_noop_when_already_at_target(self, make_cover):
+        cover = self._make_native_cover(make_cover)
+        cover.travel_calc.set_position(50)
+        cover.tilt_calc.set_position(40)
+        cover._tilt_restore_target = 40
+
+        with patch.object(cover, "async_write_ha_state"):
+            await cover._start_tilt_restore()
+
+        assert cover._tilt_restore_target is None
+        assert self._tilt_svc(40) not in _calls(cover.hass.services.async_call)
 
     @pytest.mark.asyncio
     async def test_snap_skipped_while_time_based_tilt_move_in_flight(

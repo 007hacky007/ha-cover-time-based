@@ -11,6 +11,7 @@ from homeassistant.components.cover import (
 )
 from homeassistant.const import (
     ATTR_SUPPORTED_FEATURES,
+    SERVICE_STOP_COVER,
     STATE_CLOSED,
     STATE_CLOSING,
     STATE_OPEN,
@@ -483,20 +484,31 @@ class WrappedCoverTimeBased(CoverTimeBased):
             return
         await super()._async_move_tilt_to_endpoint(target)
 
-    async def _plan_tilt_for_travel(self, target, command, current_pos, current_tilt):
-        """Skip simulated tilt coupling for travel when tilt is native.
+    async def _start_tilt_restore(self):
+        """Restore post-travel tilt through native forwarding when available.
 
-        The wrapped cover's firmware re-tilts its own slats during travel;
-        planning a simulated tilt phase (pre-step or post-travel restore)
-        would drive the main motor against it. The settle snap re-syncs
-        the trackers from the reported values instead.
+        The base restore re-drives the main motor on a timer to bring the
+        slats back to their pre-travel angle; a native-tilt cover does the
+        same move precisely itself. The travel-plan side (tilt sweeping to
+        the direction endpoint during travel, restore target bookkeeping)
+        stays with the base class - it models the physical slat coupling.
         """
-        if self._use_native_tilt():
-            self._tilt_restore_target = None
-            return None, 0.0, False
-        return await super()._plan_tilt_for_travel(
-            target, command, current_pos, current_tilt
-        )
+        if not self._use_native_tilt():
+            await super()._start_tilt_restore()
+            return
+        restore_target = self._tilt_restore_target
+        self._tilt_restore_target = None
+        # The auto-updater hands over here right as travel completes; stop
+        # the travel motor like the base restore does before touching tilt.
+        await self._async_handle_command(SERVICE_STOP_COVER)
+        self._last_command = None
+        if restore_target is None:
+            return
+        current_tilt = self.tilt_calc.current_position()
+        if current_tilt is not None and int(current_tilt) == restore_target:
+            return
+        self._log("_start_tilt_restore :: forwarding natively (%d)", restore_target)
+        await self._forward_native_tilt(restore_target)
 
     async def _forward_native_tilt(self, target: int) -> None:
         """Forward a tilt move to the wrapped entity's native tilt support.
