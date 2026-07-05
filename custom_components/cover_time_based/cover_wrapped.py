@@ -6,6 +6,7 @@ import time
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
     ATTR_CURRENT_TILT_POSITION,
+    ATTR_TILT_POSITION,
     CoverEntityFeature,
 )
 from homeassistant.const import (
@@ -419,6 +420,77 @@ class WrappedCoverTimeBased(CoverTimeBased):
                 await self._call_set_cover_position(int(round(pos)))
                 return
         await self._call_cover_service("stop_cover")
+
+    # --- Native tilt forwarding ---
+
+    def _wrapped_supports_native_tilt_position(self) -> bool:
+        """Return True if the wrapped cover advertises native SET_TILT_POSITION."""
+        features = self._wrapped_features()
+        return features is not None and bool(
+            features & CoverEntityFeature.SET_TILT_POSITION
+        )
+
+    def _use_native_tilt(self) -> bool:
+        """Return True if tilt commands should be forwarded natively.
+
+        Wrapped covers whose underlying entity positions its own slats
+        (e.g. Z-Wave shutters in venetian mode) execute tilt themselves,
+        precisely and regardless of travel position. Simulating tilt with
+        timed main-motor runs both fails on such devices (a tilt-close at
+        travel endpoint 0 becomes a close_cover no-op) and fights their
+        firmware. Command-echo covers report nothing trustworthy to snap
+        back from, so they keep the time-based path.
+        """
+        if self._reports_command_not_endpoint:
+            return False
+        return self._wrapped_supports_native_tilt_position()
+
+    async def async_set_cover_tilt_position(self, **kwargs):
+        """Forward tilt-to-position natively when the wrapped cover can."""
+        if ATTR_TILT_POSITION in kwargs and self._use_native_tilt():
+            target = int(kwargs[ATTR_TILT_POSITION])
+            self._log(
+                "async_set_cover_tilt_position :: forwarding natively (%d)", target
+            )
+            await self._forward_native_tilt(target)
+            return
+        await super().async_set_cover_tilt_position(**kwargs)
+
+    async def async_open_cover_tilt(self, **kwargs):
+        """Tilt fully open, natively when the wrapped cover can."""
+        if self._use_native_tilt():
+            self._log("async_open_cover_tilt :: forwarding natively")
+            await self._forward_native_tilt(100)
+            return
+        await super().async_open_cover_tilt(**kwargs)
+
+    async def async_close_cover_tilt(self, **kwargs):
+        """Tilt fully closed, natively when the wrapped cover can."""
+        if self._use_native_tilt():
+            self._log("async_close_cover_tilt :: forwarding natively")
+            await self._forward_native_tilt(0)
+            return
+        await super().async_close_cover_tilt(**kwargs)
+
+    async def _forward_native_tilt(self, target: int) -> None:
+        """Forward a tilt move to the wrapped entity's native tilt support.
+
+        The tilt tracker is set optimistically to the target (native tilt
+        completes within a second or two); the settle snap in
+        _maybe_snap_to_reported_tilt then corrects it to whatever the
+        wrapped cover actually reports.
+        """
+        self._start_bounce_grace_window()
+        await self.hass.services.async_call(
+            "cover",
+            "set_cover_tilt_position",
+            {"entity_id": self._cover_entity_id, ATTR_TILT_POSITION: target},
+            False,
+        )
+        if self._has_tilt_support():
+            self.tilt_calc.set_position(target)
+            self.async_write_ha_state()
+            await self._async_persist_position()
 
     # --- Tilt motor relay commands ---
 

@@ -645,3 +645,107 @@ class TestWrappedCommandEchoMode:
         with patch.object(cover, "_snap_to_position", new=AsyncMock()) as snap_mock:
             await cover._handle_external_state_change("cover.inner", "open", "closed")
         snap_mock.assert_awaited_once_with(0)
+
+
+# CoverEntityFeature tilt bit values.
+_F_OPEN_TILT = 16
+_F_CLOSE_TILT = 32
+_F_SET_TILT_POSITION = 128
+
+
+class TestWrappedNativeTiltForwarding:
+    """Tilt commands are forwarded natively when the wrapped cover
+    advertises SET_TILT_POSITION — its firmware positions the slats itself.
+    The time-based simulation (timed main-motor runs) both fails on such
+    devices and fights their firmware.
+    """
+
+    def _native_tilt_features(self):
+        return (
+            _F_OPEN
+            | _F_CLOSE
+            | _F_SET_POSITION
+            | _F_STOP
+            | _F_OPEN_TILT
+            | _F_CLOSE_TILT
+            | _F_SET_TILT_POSITION
+        )
+
+    def test_use_native_tilt_true_when_supported(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, self._native_tilt_features())
+        assert cover._use_native_tilt() is True
+
+    def test_use_native_tilt_false_without_set_tilt_position(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, _F_OPEN | _F_CLOSE | _F_OPEN_TILT | _F_CLOSE_TILT)
+        assert cover._use_native_tilt() is False
+
+    def test_use_native_tilt_false_for_command_echo(self):
+        cover = _make_wrapped_cover(reports_command_not_endpoint=True)
+        _set_wrapped_features(cover, self._native_tilt_features())
+        assert cover._use_native_tilt() is False
+
+    def test_use_native_tilt_false_when_unavailable(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(
+            cover, self._native_tilt_features(), state=STATE_UNAVAILABLE
+        )
+        assert cover._use_native_tilt() is False
+
+    @pytest.mark.asyncio
+    async def test_set_tilt_position_forwarded_natively(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, self._native_tilt_features())
+        with patch.object(cover, "async_write_ha_state"):
+            await cover.async_set_cover_tilt_position(tilt_position=70)
+        assert (
+            call(
+                "cover",
+                "set_cover_tilt_position",
+                {"entity_id": "cover.inner", "tilt_position": 70},
+                False,
+            )
+            in _calls(cover.hass.services.async_call)
+        )
+
+    @pytest.mark.asyncio
+    async def test_open_tilt_forwarded_as_set_100(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, self._native_tilt_features())
+        with patch.object(cover, "async_write_ha_state"):
+            await cover.async_open_cover_tilt()
+        assert (
+            call(
+                "cover",
+                "set_cover_tilt_position",
+                {"entity_id": "cover.inner", "tilt_position": 100},
+                False,
+            )
+            in _calls(cover.hass.services.async_call)
+        )
+
+    @pytest.mark.asyncio
+    async def test_close_tilt_forwarded_as_set_0(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, self._native_tilt_features())
+        with patch.object(cover, "async_write_ha_state"):
+            await cover.async_close_cover_tilt()
+        assert (
+            call(
+                "cover",
+                "set_cover_tilt_position",
+                {"entity_id": "cover.inner", "tilt_position": 0},
+                False,
+            )
+            in _calls(cover.hass.services.async_call)
+        )
+
+    @pytest.mark.asyncio
+    async def test_native_forward_opens_bounce_grace_window(self):
+        cover = _make_wrapped_cover()
+        _set_wrapped_features(cover, self._native_tilt_features())
+        assert not cover._in_bounce_grace_window()
+        with patch.object(cover, "async_write_ha_state"):
+            await cover.async_set_cover_tilt_position(tilt_position=30)
+        assert cover._in_bounce_grace_window()
