@@ -1010,7 +1010,7 @@ class TestWrappedCoverSnapToReportedPosition:
 
 class TestWrappedCoverSnapToReportedTilt:
     """When the wrapped cover settles, its reported current_tilt_position
-    (when exposed) is the source of truth for the tilt tracker — the same
+    (when exposed) is the source of truth for the tilt tracker - the same
     contract _snap_to_position provides for travel. Covers whose slats are
     re-tilted as a side effect of travel (venetian blinds) or tilted
     externally would otherwise drift, since the time-based tilt estimate
@@ -1059,7 +1059,7 @@ class TestWrappedCoverSnapToReportedTilt:
         cover.travel_calc.set_position(0)
         cover.tilt_calc.set_position(0)
         # Sequential coupling says tilt=100 whenever travel != 0; the wrapped
-        # cover disagrees and reports 40 — the report wins.
+        # cover disagrees and reports 40 - the report wins.
         _set_wrapped_state(cover, "open", current_position=60, current_tilt_position=40)
 
         with patch.object(cover, "async_write_ha_state"):
@@ -1111,7 +1111,7 @@ class TestWrappedCoverSnapToReportedTilt:
     @pytest.mark.asyncio
     async def test_mid_travel_attribute_update_does_not_snap_tilt(self, make_cover):
         """Attribute updates while the wrapped cover reports opening/closing
-        are mid-travel values — not trusted for tilt either."""
+        are mid-travel values - not trusted for tilt either."""
         cover = self._make_tilt_cover(make_cover)
         cover.travel_calc.set_position(50)
         cover.tilt_calc.set_position(30)
